@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Calendar Food</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    .day-cell {
+      cursor: pointer;
+      min-height: 100px;
+    }
+    .modal-bg {
+      background-color: rgba(0,0,0,0.5);
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center p-4">
+  <h1 class="text-3xl font-semibold mb-6">Kalender Jadwal Makan Bulanan</h1>
+  <div class="flex items-center mb-4 space-x-4">
+    <button id="prevMonth" class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+      <i class="fas fa-chevron-left"></i> Bulan Sebelumnya
+    </button>
+    <h2 id="monthYear" class="text-xl font-semibold"></h2>
+    <button id="nextMonth" class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+      Bulan Berikutnya <i class="fas fa-chevron-right"></i>
+    </button>
+  </div>
+
+  <div class="max-w-4xl w-full bg-white rounded shadow p-4 mb-6">
+    <h3 class="text-lg font-semibold mb-2">Pengingat Kalender</h3>
+    <div class="flex items-center space-x-4">
+      <label for="reminderToggle" class="flex items-center cursor-pointer select-none">
+        <input type="checkbox" id="reminderToggle" class="hidden" />
+        <div class="w-10 h-6 bg-gray-300 rounded-full relative transition-colors duration-300 ease-in-out"></div>
+        <div class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transform transition-transform duration-300 ease-in-out"></div>
+        <span class="ml-3 text-gray-700">Aktifkan Pengingat Harian</span>
+      </label>
+      <input type="time" id="reminderTime" class="border border-gray-300 rounded px-3 py-1" value="20:00" />
+    </div>
+    <p id="reminderStatus" class="mt-2 text-sm text-gray-600"></p>
+  </div>
+  <div class="grid grid-cols-7 gap-2 w-full max-w-4xl text-center text-gray-700 font-semibold mb-2">
+    <div>Min</div>
+    <div>Sen</div>
+    <div>Sel</div>
+    <div>Rab</div>
+    <div>Kam</div>
+    <div>Jum</div>
+    <div>Sab</div>
+  </div>
+  <div id="calendar" class="grid grid-cols-7 gap-2 w-full max-w-4xl"></div>
+
+  <!-- Modal -->
+  <div id="modal" class="fixed inset-0 hidden items-center justify-center modal-bg z-50">
+    <div class="bg-white rounded-lg shadow-lg p-6 w-80 max-w-full">
+      <h3 id="modalDate" class="text-lg font-semibold mb-4"></h3>
+      <form id="mealForm" class="space-y-4">
+        <div>
+          <label for="fastFoodCount" class="block font-medium mb-1">Jumlah Makan Fast Food</label>
+          <input type="number" id="fastFoodCount" name="fastFoodCount" min="0" class="w-full border border-gray-300 rounded px-3 py-2" />
+        </div>
+        <div>
+          <label for="healthyFoodCount" class="block font-medium mb-1">Jumlah Makan Sehat</label>
+          <input type="number" id="healthyFoodCount" name="healthyFoodCount" min="0" class="w-full border border-gray-300 rounded px-3 py-2" />
+        </div>
+        <div class="flex justify-end space-x-3">
+          <button type="button" id="cancelBtn" class="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400 transition">Batal</button>
+          <button type="submit" class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition">Simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const calendarEl = document.getElementById('calendar');
+    const monthYearEl = document.getElementById('monthYear');
+    const prevMonthBtn = document.getElementById('prevMonth');
+    const nextMonthBtn = document.getElementById('nextMonth');
+    const modal = document.getElementById('modal');
+    const modalDateEl = document.getElementById('modalDate');
+    const mealForm = document.getElementById('mealForm');
+    const fastFoodInput = document.getElementById('fastFoodCount');
+    const healthyFoodInput = document.getElementById('healthyFoodCount');
+    const cancelBtn = document.getElementById('cancelBtn');
+
+    const reminderToggle = document.getElementById('reminderToggle');
+    const reminderTimeInput = document.getElementById('reminderTime');
+    const reminderStatus = document.getElementById('reminderStatus');
+
+    let currentDate = new Date();
+    let selectedDate = null;
+    let reminderTimeoutId = null;
+
+    function getStorageKey(year, month) {
+      return `mealCalendar-${year}-${month}`;
+    }
+
+    function loadData(year, month) {
+      const key = getStorageKey(year, month);
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : {};
+    }
+
+    function saveData(year, month, data) {
+      const key = getStorageKey(year, month);
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+
+    function renderCalendar(date) {
+      calendarEl.innerHTML = '';
+      const year = date.getFullYear();
+      const month = date.getMonth();
+
+      monthYearEl.textContent = date.toLocaleDateString('id-ID', { year: 'numeric', month: 'long' });
+
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0);
+      const startDay = firstDay.getDay(); // Sunday=0 ... Saturday=6
+
+      const daysInMonth = lastDay.getDate();
+      const data = loadData(year, month);
+
+      // Fill empty cells before first day
+      for (let i = 0; i < startDay; i++) {
+        const emptyCell = document.createElement('div');
+        calendarEl.appendChild(emptyCell);
+      }
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dayCell = document.createElement('div');
+        dayCell.className = 'day-cell bg-white rounded shadow p-2 flex flex-col justify-between';
+        dayCell.tabIndex = 0;
+        dayCell.setAttribute('role', 'button');
+        dayCell.setAttribute('aria-label', `Tanggal ${day} ${month + 1} ${year}`);
+
+        const dateKey = day.toString();
+
+        const fastFoodCount = data[dateKey]?.fastFood || 0;
+        const healthyFoodCount = data[dateKey]?.healthy || 0;
+
+        dayCell.innerHTML = `
+          <div class="font-semibold text-lg">${day}</div>
+          <div class="mt-2 text-sm text-red-600 flex items-center space-x-1">
+            <i class="fas fa-hamburger"></i>
+            <span>${fastFoodCount}</span>
+          </div>
+          <div class="mt-1 text-sm text-green-600 flex items-center space-x-1">
+            <i class="fas fa-leaf"></i>
+            <span>${healthyFoodCount}</span>
+          </div>
+        `;
+
+        dayCell.addEventListener('click', () => openModal(year, month, day));
+        dayCell.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openModal(year, month, day);
+          }
+        });
+
+        calendarEl.appendChild(dayCell);
+      }
+    }
+
+    function openModal(year, month, day) {
+      selectedDate = { year, month, day };
+      modalDateEl.textContent = `Tanggal: ${day} ${new Date(year, month).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}`;
+      const data = loadData(year, month);
+      fastFoodInput.value = data[day]?.fastFood || 0;
+      healthyFoodInput.value = data[day]?.healthy || 0;
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      fastFoodInput.focus();
+    }
+
+    function closeModal() {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      selectedDate = null;
+      mealForm.reset();
+    }
+
+    mealForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!selectedDate) return;
+      const { year, month, day } = selectedDate;
+      const data = loadData(year, month);
+      const fastFoodCount = Math.max(0, parseInt(fastFoodInput.value) || 0);
+      const healthyFoodCount = Math.max(0, parseInt(healthyFoodInput.value) || 0);
+      data[day] = { fastFood: fastFoodCount, healthy: healthyFoodCount };
+      saveData(year, month, data);
+      renderCalendar(new Date(year, month));
+      closeModal();
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      closeModal();
+    });
+
+    prevMonthBtn.addEventListener('click', () => {
+      currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+      renderCalendar(currentDate);
+    });
+
+    nextMonthBtn.addEventListener('click', () => {
+      currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+      renderCalendar(currentDate);
+    });
+
+    // Reminder alarm functions
+    function requestNotificationPermission() {
+      if (!('Notification' in window)) {
+        reminderStatus.textContent = 'Browser Anda tidak mendukung notifikasi.';
+        return;
+      }
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          reminderStatus.textContent = 'Notifikasi diizinkan.';
+        } else {
+          reminderStatus.textContent = 'Notifikasi tidak diizinkan.';
+        }
+      });
+    }
+
+    function scheduleReminder() {
+      if (reminderTimeoutId) {
+        clearTimeout(reminderTimeoutId);
+      }
+      if (!reminderToggle.checked) {
+        reminderStatus.textContent = 'Pengingat dimatikan.';
+        return;
+      }
+      const now = new Date();
+      const [hours, minutes] = reminderTimeInput.value.split(':').map(Number);
+      const reminderTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0, 0);
+
+      if (reminderTime <= now) {
+        reminderTime.setDate(reminderTime.getDate() + 1);
+      }
+
+      const timeout = reminderTime.getTime() - now.getTime();
+
+      reminderStatus.textContent = `Pengingat aktif pada pukul ${reminderTimeInput.value}.`;
+
+      reminderTimeoutId = setTimeout(() => {
+        showReminderNotification();
+        scheduleReminder(); // Schedule next reminder for next day
+      }, timeout);
+    }
+
+    function showReminderNotification() {
+      if (Notification.permission === 'granted') {
+        new Notification('Pengingat Kalender Makan', {
+          body: 'Jangan lupa isi jadwal makan hari ini di kalender!',
+          icon: 'https://cdn-icons-png.flaticon.com/512/2921/2921222.png'
+        });
+      } else {
+        alert('Jangan lupa isi jadwal makan hari ini di kalender!');
+      }
+    }
+
+    reminderToggle.addEventListener('change', () => {
+      if (reminderToggle.checked) {
+        requestNotificationPermission();
+      }
+      scheduleReminder();
+      localStorage.setItem('calendarReminderEnabled', reminderToggle.checked);
+    });
+
+    reminderTimeInput.addEventListener('change', () => {
+      scheduleReminder();
+      localStorage.setItem('calendarReminderTime', reminderTimeInput.value);
+    });
+
+    // Load reminder settings from localStorage
+    function loadReminderSettings() {
+      const enabled = localStorage.getItem('calendarReminderEnabled') === 'true';
+      const time = localStorage.getItem('calendarReminderTime') || '20:00';
+      reminderToggle.checked = enabled;
+      reminderTimeInput.value = time;
+      if (enabled) {
+        requestNotificationPermission();
+        scheduleReminder();
+      } else {
+        reminderStatus.textContent = 'Pengingat dimatikan.';
+      }
+    }
+
+    // Initial render and setup
+    renderCalendar(currentDate);
+    loadReminderSettings();
+  </script>
+</body>
+</html>
